@@ -17,7 +17,7 @@ When you ask Claude for help integrating Paymob, this plugin provides:
 ### Claude Code (CLI)
 
 ```bash
-claude plugin install --git https://github.com/MRagabMob/Paymob-Claude-Integration-Plugin-Skill
+claude plugin install --git https://github.com/PaymobAccept/Paymob-Claude-Integration-Skill
 ```
 
 ### Cowork (Desktop)
@@ -27,7 +27,7 @@ Install from the plugin marketplace, or point to this repo as a custom marketpla
 ### Local Development
 
 ```bash
-git clone https://github.com/MRagabMob/Paymob-Claude-Integration-Plugin-Skill.git
+git clone https://github.com/PaymobAccept/Paymob-Claude-Integration-Skill.git
 claude --plugin-dir ./paymob-integration-plugin
 ```
 
