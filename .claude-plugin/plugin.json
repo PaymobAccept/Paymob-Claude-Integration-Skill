@@ -1,15 +1,15 @@
 {
   "name": "paymob-integration",
-  "description": "Expert guidance for integrating Paymob payment gateway. Covers the Intention API and legacy Accept API for card payments, mobile wallets (Vodafone Cash, Orange Money), kiosk, and cash collection. Supports Node.js, Python, PHP, .NET, Ruby, React, Flutter, and more.",
-  "version": "1.0.0",
+  "description": "Expert guidance for integrating Paymob payment gateway. Covers the Intention API for card payments, mobile wallets, BNPLs, Apple Pay, Google Pay, kiosk, and bank installments across all regions. Supports Node.js, Python, PHP, .NET, Ruby, React, Flutter, and native mobile SDKs.",
+  "version": "2.0.0",
   "author": {
     "name": "Sharky",
     "email": "ajeeb24@msn.com"
   },
-  "homepage": "https://github.com/ajeeb24/paymob-integration-plugin",
+  "homepage": "https://github.com/PaymobAccept/Paymob-Claude-Integration-Skill",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ajeeb24/paymob-integration-plugin.git"
+    "url": "https://github.com/PaymobAccept/Paymob-Claude-Integration-Skill.git"
   },
   "license": "MIT",
   "keywords": [
