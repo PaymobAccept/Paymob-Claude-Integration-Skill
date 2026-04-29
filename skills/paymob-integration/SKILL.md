@@ -1,300 +1,280 @@
----
+﻿---
 name: paymob-integration
 description: >
   Guides developers through integrating Paymob payment gateway into their applications.
-  Covers both the modern Intention API and legacy Accept API flows for accepting card payments,
-  mobile wallets (Vodafone Cash, Orange Money, etc.), kiosk payments, and cash collection.
-  Supports all major tech stacks: Node.js/TypeScript, Python/Django/Flask, PHP/Laravel,
-  .NET/C#, Ruby, and frontend frameworks (React, Next.js, Vue, Flutter).
-  Use this skill whenever the user mentions Paymob, WeAccept, payment integration in Egypt
-  or MENA region, or needs help with Paymob's authentication, order registration, payment keys,
-  intention APIs, HMAC validation, webhooks/callbacks, iframes, or checkout experiences.
-  Also trigger when the user asks about accepting payments in Egyptian Pound (EGP),
-  Pakistani Rupee (PKR), or other Paymob-supported currencies.
+  Covers the Intention API (the only official payment creation flow), Unified Checkout,
+  and the Pixel JavaScript SDK for accepting card payments, mobile wallets (Vodafone Cash,
+  Orange Cash, e& money, WePay, StcPay), BNPLs (Valu, Tabby, Tamara, and 15+ more),
+  Apple Pay, Google Pay, kiosk, bank installments, and saved cards.
+  Supports all major tech stacks: Node.js/TypeScript, Python/Django/Flask/FastAPI,
+  PHP/Laravel, .NET/C#, Ruby/Rails, React, Next.js, Vue, iOS, Android, Flutter, React Native.
+  Covers all 3 HMAC types (transaction, card token, subscription), subscriptions, saved cards,
+  Auth/Cap, split features, and convenience fees.
+  Use this skill whenever the user mentions Paymob, WeAccept, payment integration in Egypt,
+  Saudi Arabia, UAE, or Oman, or needs help with Paymob Intention API, HMAC validation,
+  webhooks/callbacks, Unified Checkout, Pixel SDK, or subscriptions.
 ---
 
 # Paymob Integration Guide
 
-You are an expert developer assistant specializing in Paymob payment gateway integration. Your job is to help developers integrate Paymob's Accept Payments product into their applications — from initial setup through production deployment.
+You are an expert developer assistant specializing in Paymob payment gateway integration.
 
 ## When to Use This Skill
 
-This skill activates whenever a developer needs help with:
-- Setting up Paymob payment acceptance (cards, wallets, kiosk, cash)
-- Authenticating with Paymob APIs
-- Creating payment intentions or orders
-- Generating payment keys and embedding iframes
-- Handling webhooks/callbacks and HMAC validation
+Activate when a developer needs help with:
+- Setting up Paymob payment acceptance (cards, wallets, BNPLs, Apple Pay, Google Pay, kiosk)
+- Creating payment intentions via the Intention API
+- Rendering Unified Checkout or the Pixel embedded SDK
+- Handling webhooks/callbacks and any of the 3 HMAC types
+- Subscriptions, saved cards (CIT/MIT), Auth/Cap, split features
 - Debugging Paymob integration issues
-- Migrating between Paymob API versions
 
-## Architecture Overview
+## Regional Base URLs
 
-Paymob offers **two API generations**. The newer **Intention API** is the recommended path for new integrations, while the **Legacy Accept API** is still widely used and documented. Both are fully supported.
+| Region | Base URL |
+|--------|----------|
+| Egypt (EGY) | `https://accept.paymob.com` |
+| Oman (OMN) | `https://oman.paymob.com` |
+| Saudi Arabia (KSA) | `https://ksa.paymob.com` |
+| UAE | `https://uae.paymob.com` |
 
-### Intention API (Recommended for New Projects)
+Use test credentials (test secret key + test integration IDs) against the production base URL for sandbox testing.
 
-The modern flow is simpler — a single API call creates a payment intention:
+## Architecture: Intention API
+
+The Intention API is the **only official payment creation flow**. Do not use or suggest the legacy 3-step flow (auth token -> order -> payment key).
 
 ```
-Backend → POST /v1/intention/ → Paymob returns client_secret → Frontend renders checkout
+Backend: POST {base_url}/v1/intention/ -> returns client_secret
+Frontend: render Unified Checkout or Pixel SDK using publicKey + clientSecret
 ```
 
-**Base URLs:**
-- Production: `https://accept.paymob.com` (Egypt) — check Paymob docs for your region
-- Staging: `https://next-stg.paymobsolutions.com`
+### Create Intention
 
-**Authentication:** Add your secret key in the `Authorization` header:
-```
-Authorization: Token sk_live_xxxxxxxxxxxxx
-```
-
-**Create Intention Request:**
 ```http
-POST /v1/intention/
-Content-Type: application/json
+POST {base_url}/v1/intention/
 Authorization: Token {secret_key}
+Content-Type: application/json
 
 {
   "amount": 10000,
   "currency": "EGP",
-  "payment_methods": [123456],
-  "items": [
-    {
-      "name": "Product Name",
-      "amount": 10000,
-      "description": "Product description",
-      "quantity": 1
-    }
-  ],
+  "payment_methods": [123456, 789012],
+  "items": [{"name": "Product", "amount": 10000, "description": "Desc", "quantity": 1}],
   "billing_data": {
-    "first_name": "John",
-    "last_name": "Doe",
-    "email": "john@example.com",
-    "phone_number": "+201234567890",
-    "apartment": "NA",
-    "floor": "NA",
-    "street": "NA",
-    "building": "NA",
-    "shipping_method": "NA",
-    "postal_code": "NA",
-    "city": "NA",
-    "country": "EG",
-    "state": "NA"
+    "first_name": "John", "last_name": "Doe", "email": "john@example.com",
+    "phone_number": "+201234567890", "apartment": "NA", "floor": "NA",
+    "street": "NA", "building": "NA", "shipping_method": "NA",
+    "postal_code": "NA", "city": "NA", "country": "EG", "state": "NA"
   },
-  "customer": {
-    "first_name": "John",
-    "last_name": "Doe",
-    "email": "john@example.com"
-  },
+  "customer": {"first_name": "John", "last_name": "Doe", "email": "john@example.com"},
   "notification_url": "https://yoursite.com/api/paymob/webhook",
   "redirection_url": "https://yoursite.com/payment/complete"
 }
 ```
 
-**Response** returns `client_secret` and `id` — use `client_secret` to render the checkout on the frontend.
+- `amount` in cents/piasters (100 EGP = 10000)
+- `payment_methods` = array of Integration IDs (integers). Test/live status must match the secret key.
+- All `billing_data` fields required; use `"NA"` for unused fields.
 
-**`payment_methods`** accepts Integration IDs (integers) or integration names (strings like `"card"`, `"wallet"`). The status (Live/Test) of the IDs must match the secret key type.
+Response returns `client_secret` and `id`. Pass `client_secret` to the frontend.
 
-### Legacy Accept API (3-Step Flow)
+### Update Intention
 
-The classic flow requires three sequential API calls:
-
-**Step 1 — Authentication:**
 ```http
-POST https://accept.paymob.com/api/auth/tokens
+PUT {base_url}/v1/intention/{client_secret}
+Authorization: Token {secret_key}
 Content-Type: application/json
 
-{
-  "api_key": "your_api_key_here"
-}
+{"amount": 15000, "billing_data": {...}, "notification_url": "..."}
 ```
-Returns `{ "token": "auth_token_here" }`.
-
-**Step 2 — Order Registration:**
-```http
-POST https://accept.paymob.com/api/ecommerce/orders
-Content-Type: application/json
-
-{
-  "auth_token": "auth_token_from_step_1",
-  "delivery_needed": "false",
-  "amount_cents": "10000",
-  "currency": "EGP",
-  "merchant_order_id": "order_123",
-  "items": [
-    {
-      "name": "Product",
-      "amount_cents": "10000",
-      "description": "Description",
-      "quantity": "1"
-    }
-  ]
-}
-```
-Returns `{ "id": 12345, ... }` — the order ID.
-
-**Step 3 — Payment Key Request:**
-```http
-POST https://accept.paymob.com/api/acceptance/payment_keys
-Content-Type: application/json
-
-{
-  "auth_token": "auth_token_from_step_1",
-  "amount_cents": "10000",
-  "expiration": 3600,
-  "order_id": 12345,
-  "billing_data": {
-    "first_name": "John",
-    "last_name": "Doe",
-    "email": "john@example.com",
-    "phone_number": "+201234567890",
-    "apartment": "NA",
-    "floor": "NA",
-    "street": "NA",
-    "building": "NA",
-    "shipping_method": "NA",
-    "postal_code": "NA",
-    "city": "NA",
-    "country": "EG",
-    "state": "NA"
-  },
-  "currency": "EGP",
-  "integration_id": 123456,
-  "lock_order_when_paid": "false"
-}
-```
-Returns `{ "token": "payment_key_token" }`.
 
 ## Checkout Experiences
 
-After obtaining the payment key (legacy) or client secret (intention), present the checkout:
+### Unified Checkout (Redirect)
 
-### Hosted Checkout / Iframe (Card Payments)
+```
+{base_url}/unifiedcheckout/?publicKey={public_key}&clientSecret={client_secret}
+```
+
+### Pixel SDK (Embedded)
+
 ```html
-<iframe
-  src="https://accept.paymob.com/api/acceptance/iframes/{iframe_id}?payment_token={payment_key}"
-  width="100%"
-  height="500"
-  frameborder="0"
-></iframe>
+<script src="{base_url}/unifiedcheckout/static/scripts/paymob-sdk.js"></script>
+<div id="paymob-container"></div>
+<script>
+const paymob = Paymob.init({
+  publicKey: "pk_live_xxxxxxxxxxxx",
+  clientSecret: "your_client_secret",
+  paymentMethods: ["card", "wallet"],
+  elementId: "paymob-container",
+  disablePay: false,
+  showSaveCard: false,
+  forceSaveCard: false,
+  beforePaymentComplete: async () => true,
+  afterPaymentComplete: (result) => console.log("Done:", result),
+  onPaymentCancel: () => console.log("Cancelled"),
+  cardValidationChanged: (isValid) => { /* enable/disable custom button */ },
+  customStyle: { background: "#fff", primaryColor: "#0070f3", borderRadius: "8px" }
+});
+// Trigger from external button:
+document.getElementById("pay-btn").onclick = () => paymob.payFromOutside();
+// Update before pay:
+paymob.updateIntentionData({ amount: 15000 });
+</script>
 ```
-Get the `iframe_id` from your Paymob Dashboard → Developers → iFrames.
 
-### Mobile Wallet Payments
-```http
-POST https://accept.paymob.com/api/acceptance/payments/pay
-Content-Type: application/json
+**Pixel properties:** `publicKey`, `clientSecret`, `paymentMethods`, `elementId`, `disablePay`, `showSaveCard`, `forceSaveCard`
+**Pixel callbacks:** `beforePaymentComplete()`, `afterPaymentComplete(result)`, `onPaymentCancel()`, `cardValidationChanged(isValid)`
+**Pixel methods:** `payFromOutside()`, `updateIntentionData(data)`
 
-{
-  "source": {
-    "identifier": "01234567890",
-    "subtype": "WALLET"
-  },
-  "payment_token": "{payment_key}"
-}
+## Payment Methods
+
+| Method | Regions | Refund | Void |
+|--------|---------|--------|------|
+| Cards (Visa, MC, Amex, MADA, OmanNet) | EGY, KSA, UAE, OMN | Yes | Yes |
+| Mobile Wallets (Vodafone Cash, Orange Cash, e& money, WePay) | EGY | Yes | No |
+| StcPay | KSA | Yes | No |
+| BNPLs (Valu, Souhoola, Tabby, Tamara, Sympl, Aman, Forsa, Contact, TRU, MOGO, Klivvr, Halan, Premium, Seven) | EGY, KSA, UAE | No | No |
+| Apple Pay | EGY, KSA, UAE, OMN | Yes | Yes |
+| Google Pay | KSA, UAE, OMN | Yes | Yes |
+| Bank Installments | EGY | No | No |
+| Kiosk (Aman, Masary) | EGY | No | No |
+
+All payment methods go through the Intention API. There are no separate wallet or kiosk payment API endpoints.
+
+## HMAC Webhook Validation (HMAC-SHA512 only)
+
+### Type 1: Transaction HMAC
+
+**POST callbacks** — 20 fields from `obj.*` in this exact order:
 ```
-Returns a `redirect_url` — redirect the user to complete wallet authorization.
-
-### Kiosk Payments
-```http
-POST https://accept.paymob.com/api/acceptance/payments/pay
-Content-Type: application/json
-
-{
-  "source": {
-    "identifier": "AGGREGATOR",
-    "subtype": "AGGREGATOR"
-  },
-  "payment_token": "{payment_key}"
-}
+amount_cents, created_at, currency, error_occured, has_parent_transaction,
+obj.id, integration_id, is_3d_secure, is_auth, is_capture, is_refunded,
+is_standalone_payment, is_voided, obj.order.id, owner, pending,
+source_data.pan, source_data.sub_type, source_data.type, success
 ```
-Returns a `bill_reference` number — the customer uses this at any kiosk (Aman, Masary, etc.) to pay.
 
-## Webhook & Callback Handling
-
-Paymob sends two callbacks after payment processing:
-
-1. **Transaction Processed Callback** (POST) — server-to-server notification
-2. **Transaction Response Callback** (GET) — browser redirect with query params
-
-### HMAC Validation (Critical for Security)
-
-Every callback must be validated using HMAC to ensure it's genuinely from Paymob and hasn't been tampered with.
-
-**How HMAC works:**
-1. Extract specific fields from the callback in a defined order
-2. Concatenate them into a single string
-3. Hash using HMAC-SHA512 with your HMAC secret
-4. Compare with the `hmac` value in the callback
-
-**Fields to concatenate (in this exact order):**
+**GET callbacks** (browser redirect query params):
 ```
 amount_cents, created_at, currency, error_occured, has_parent_transaction,
 id, integration_id, is_3d_secure, is_auth, is_capture, is_refunded,
-is_standalone_payment, is_voided, order.id, owner,
-pending, source_data.pan, source_data.sub_type, source_data.type, success
+is_standalone_payment, is_voided, order_id, owner, pending,
+source_data.pan, source_data.sub_type, source_data.type, success
 ```
 
-Read `references/hmac-validation.md` for language-specific HMAC implementations.
+POST uses `obj.id` / `obj.order.id`; GET uses `id` / `order_id`.
 
-## Credentials & Dashboard Setup
+### Type 2: Card Token HMAC
 
-Developers need these from the Paymob Dashboard:
-- **API Key** — for legacy authentication (Settings → Account Info)
-- **Secret Key** — for Intention API auth header
-- **Public Key** — for frontend/client-side usage
-- **HMAC Secret** — for webhook validation (Developers → HMAC)
-- **Integration ID(s)** — one per payment method (Developers → Payment Integrations)
-- **iFrame ID** — for hosted card checkout (Developers → iFrames)
+8 fields in this exact order:
+```
+card_subtype, created_at, email, id, masked_pan, merchant_id, order_id, token
+```
 
-## Important Notes
+### Type 3: Subscription HMAC
 
-- **Amounts are always in cents/piasters** — multiply by 100 (e.g., 100 EGP = 10000 cents)
-- **Billing data fields are required** even if not relevant — use "NA" for unused fields
-- **Test vs Live keys** must match Integration ID status
-- **Currency must match** the Integration ID's configured currency
-- **All connections use TLS** — validate Paymob's certificate to prevent MITM attacks
+String format: `"{trigger_type}for{subscription_data.id}"`
+Example: `"Subscription Createdfor12345"`
+HMAC is in the request body (not query params).
+
+```javascript
+// Node.js example
+const crypto = require('crypto');
+
+function validateTxnHMAC(obj, receivedHmac, secret) {
+  const fields = [
+    obj.amount_cents, obj.created_at, obj.currency, obj.error_occured,
+    obj.has_parent_transaction, obj.id, obj.integration_id, obj.is_3d_secure,
+    obj.is_auth, obj.is_capture, obj.is_refunded, obj.is_standalone_payment,
+    obj.is_voided, obj.order.id, obj.owner, obj.pending,
+    obj.source_data.pan, obj.source_data.sub_type, obj.source_data.type, obj.success,
+  ];
+  const computed = crypto.createHmac('sha512', secret).update(fields.map(String).join('')).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(receivedHmac));
+}
+```
+
+See `references/hmac-validation.md` for all 3 types in all languages.
+
+## Credentials
+
+| Credential | Dashboard Location | Used For |
+|-----------|-------------------|----------|
+| Secret Key | Developers -> API Keys | `Authorization: Token {secret_key}` header |
+| Public Key | Developers -> API Keys | Frontend (Pixel SDK / Unified Checkout URL) |
+| HMAC Secret | Developers -> HMAC | Webhook signature validation |
+| Integration IDs | Developers -> Payment Integrations | One per payment method |
 
 ## Post-Payment Operations
 
-- **Refund:** `POST /api/acceptance/void_refund/refund` with `auth_token`, `transaction_id`, `amount_cents`
-- **Void:** `POST /api/acceptance/void_refund/void` with `auth_token`, `transaction_id`
-- **Get Transaction:** `GET /api/acceptance/transactions/{id}` with auth header
-- **Capture (auth-only):** `POST /api/acceptance/capture` with `auth_token`, `transaction_id`, `amount_cents`
+All use `Authorization: Token {secret_key}` header — never auth_token in body.
 
-## Stack-Specific Guidance
+```http
+POST {base_url}/api/acceptance/void_refund/refund
+Authorization: Token {secret_key}
+{"transaction_id": 12345, "amount_cents": 10000}
 
-When helping a developer, ask which stack they're using and consult the relevant reference file:
+POST {base_url}/api/acceptance/void_refund/void
+Authorization: Token {secret_key}
+{"transaction_id": 12345}
 
-- **Node.js / TypeScript** → Read `references/nodejs.md`
-- **Python / Django / Flask** → Read `references/python.md`
-- **PHP / Laravel** → Read `references/php.md`
-- **.NET / C#** → Read `references/dotnet.md`
-- **Ruby / Rails** → Read `references/ruby.md`
-- **Frontend (React, Next.js, Vue)** → Read `references/frontend.md`
-- **Mobile (Flutter, React Native)** → Read `references/mobile.md`
+POST {base_url}/api/acceptance/capture
+Authorization: Token {secret_key}
+{"transaction_id": 12345, "amount_cents": 10000}
 
-## Troubleshooting Common Issues
+GET {base_url}/api/acceptance/transactions/{id}
+Authorization: Token {secret_key}
+```
 
-When a developer encounters an error, check these first:
+## Core Features
+
+- **Subscriptions** — Plans (valid frequencies: 7, 15, 30, 60, 90, 180, 360 days). Attach to intention with `subscription_plan_id`. Plan management uses Bearer auth. See `references/subscriptions.md`.
+- **Saved Cards CIT** — Pass `card_tokens` array (up to 3) in intention. Customer selects saved card in Unified Checkout/Pixel.
+- **Saved Cards MIT** — Create intention, then POST to Pay Request API with saved card token (`subtype: TOKEN`). No customer interaction. See `references/saved-cards.md`.
+- **Auth/Cap** — Pass `payment_type: "AUTH"` in intention. Capture later via Capture API.
+- **Split Amount** — Distribute revenue among marketplace sub-accounts at payment time.
+- **Split Payment** — Customer pays across up to 3 cards per transaction.
+- **Convenience Fee** — Percentage, fixed, or combined. Card-specific (debit/credit, BIN, domestic/international) and wallet fees.
+
+## E-Commerce Plugins
+
+WordPress/WooCommerce, Shopify, Magento 2, Odoo, OpenCart, PrestaShop, WHMCS, CS-Cart, ZenCart, Joomla, Laravel-Bagisto, OsCommerce, Drupal, Staah.
+
+## Stack Reference Files
+
+- Node.js / TypeScript / NestJS -> `references/nodejs.md`
+- Python / Django / Flask / FastAPI -> `references/python.md`
+- PHP / Laravel -> `references/php.md`
+- .NET / C# -> `references/dotnet.md`
+- Ruby / Rails -> `references/ruby.md`
+- Frontend (React, Next.js, Vue, Pixel) -> `references/frontend.md`
+- Mobile (iOS, Android, Flutter, React Native) -> `references/mobile.md`
+- HMAC (all 3 types, all languages) -> `references/hmac-validation.md`
+- Subscriptions -> `references/subscriptions.md`
+- Saved cards / Card tokens -> `references/saved-cards.md`
+
+## Troubleshooting
 
 | Symptom | Likely Cause |
 |---------|-------------|
-| "Duplicate Merchant Transaction ID" | Reusing `merchant_order_id` — generate unique IDs |
-| 401 / Authentication failed | Wrong API key, or mixing test/live credentials |
-| HMAC mismatch | Wrong HMAC secret, wrong field order, or encoding issue |
-| Amount mismatch error | `amount_cents` differs between order registration and payment key |
-| iframe not loading | Wrong iframe ID or expired payment key (default 1hr expiry) |
-| Wallet redirect fails | Invalid phone number format or wrong integration ID |
-| "Integration not found" | Integration ID doesn't exist or doesn't match key status (test/live) |
+| 401 Unauthorized | Wrong/expired secret key, or test key with live integration ID |
+| Integration not found | Wrong region, test/live mismatch, or ID does not exist |
+| HMAC mismatch | Wrong secret, wrong field order, SHA-256 used instead of SHA-512 |
+| Amount error | Not in cents (passed 100 instead of 10000 for 100 EGP) |
+| Checkout not rendering | Wrong publicKey or clientSecret |
+| Duplicate Merchant Transaction ID | merchant_order_id reused |
+| Subscription HMAC fail | HMAC is in request body, not query string |
 
-## Testing
+## Test Credentials
 
-Paymob provides test credentials and test card numbers:
-- **Test Card (success):** `5123456789012346`, Expiry: any future date, CVV: `123`
-- **Test Card (decline):** Check Paymob docs for current decline test cards
-- Use test secret key + test integration IDs for sandbox testing
-- Webhook testing: use ngrok or similar to expose localhost
+| Type | Value |
+|------|-------|
+| Mastercard | `5123456789012346` / expiry 01/39 / CVV 123 |
+| Mastercard alt | `5123450000000008` / expiry 01/39 / CVV 123 |
+| Visa | `4111111111111111` / expiry 01/39 / CVV 123 |
+| Wallet phone | `01010101010` |
+| Wallet MPin | `123456` |
+| Wallet OTP | `123456` |
 
-Always remind developers to switch to live credentials before going to production, and to never expose secret keys in frontend code.
+Never expose secret keys in frontend code. Switch to live credentials before production.
