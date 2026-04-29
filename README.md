@@ -1,15 +1,17 @@
 # Paymob Integration Plugin for Claude
 
-A Claude Code / Cowork plugin that gives Claude expert-level knowledge of Paymob payment gateway integration. It guides developers step-by-step through accepting payments via cards, mobile wallets, kiosk, and cash collection across any tech stack.
+A Claude Code / Cowork plugin that gives Claude expert-level knowledge of Paymob payment gateway integration. It guides developers step-by-step through accepting payments via cards, mobile wallets, BNPLs, Apple Pay, Google Pay, kiosk, and bank installments across any tech stack.
 
 ## What It Does
 
 When you ask Claude for help integrating Paymob, this plugin provides:
 
-- **Complete API knowledge** — both the modern Intention API and the legacy 3-step Accept API
-- **Working code in your stack** — Node.js/TypeScript, Python/Django/Flask/FastAPI, PHP/Laravel, .NET/C#, Ruby/Rails, React/Next.js/Vue, Flutter/React Native
-- **HMAC webhook validation** — the exact field order, common pitfalls (the `error_occured` typo, SHA-512 not SHA-256), and ready-to-use implementations
-- **Troubleshooting** — instant diagnosis of common errors like duplicate merchant IDs, auth failures, and amount mismatches
+- **Complete Intention API knowledge** — the official payment creation flow with Unified Checkout and Pixel SDK
+- **Working code in your stack** — Node.js/TypeScript, Python/Django/Flask/FastAPI, PHP/Laravel, .NET/C#, Ruby/Rails, React/Next.js/Vue, iOS/Android/Flutter/React Native
+- **HMAC webhook validation** — all 3 types (transaction, card token, subscription), exact field orders, SHA-512 implementations
+- **Core features** — subscriptions, saved cards (CIT/MIT), Auth/Cap, split features, convenience fees
+- **Multi-region support** — Egypt, Saudi Arabia, UAE, Oman with correct base URLs
+- **Troubleshooting** — instant diagnosis of common errors like integration ID mismatches, auth failures, HMAC mismatches
 - **Security best practices** — credential handling, test vs live environments, and production readiness checks
 
 ## Installation
@@ -17,7 +19,7 @@ When you ask Claude for help integrating Paymob, this plugin provides:
 ### Claude Code (CLI)
 
 ```bash
-claude plugin install --git https://github.com/PaymobAccept/Paymob-Claude-Integration-Skill
+claude plugin install --git https://github.com/ajeeb24/paymob-integration-plugin
 ```
 
 ### Cowork (Desktop)
@@ -27,7 +29,7 @@ Install from the plugin marketplace, or point to this repo as a custom marketpla
 ### Local Development
 
 ```bash
-git clone https://github.com/PaymobAccept/Paymob-Claude-Integration-Skill.git
+git clone https://github.com/ajeeb24/paymob-integration-plugin.git
 claude --plugin-dir ./paymob-integration-plugin
 ```
 
@@ -38,7 +40,8 @@ Once installed, Claude automatically activates the skill when you ask about Paym
 - "Help me integrate Paymob card payments in my Next.js app"
 - "Add Vodafone Cash wallet payments to my Laravel backend"
 - "My Paymob HMAC validation keeps failing — here's my code..."
-- "Set up Paymob kiosk payments with Python/FastAPI"
+- "Set up Paymob subscriptions with Python/FastAPI"
+- "Integrate Apple Pay with Paymob in my React Native app"
 - "What credentials do I need from the Paymob dashboard?"
 
 ## Plugin Structure
@@ -49,39 +52,43 @@ paymob-integration-plugin/
 │   └── plugin.json              # Plugin manifest
 ├── skills/
 │   └── paymob-integration/
-│       ├── SKILL.md             # Main skill (API flows, checkout, webhooks)
+│       ├── SKILL.md             # Main skill (Intention API, checkout, webhooks, features)
 │       └── references/
 │           ├── nodejs.md        # Node.js / TypeScript / NestJS
 │           ├── python.md        # Python / Django / Flask / FastAPI
 │           ├── php.md           # PHP / Laravel
 │           ├── dotnet.md        # .NET / C#
 │           ├── ruby.md          # Ruby / Rails
-│           ├── frontend.md      # React / Next.js / Vue
-│           ├── mobile.md        # Flutter / React Native
-│           └── hmac-validation.md  # HMAC implementations (all languages)
+│           ├── frontend.md      # React / Next.js / Vue / Pixel SDK
+│           ├── mobile.md        # iOS / Android / Flutter / React Native native SDKs
+│           ├── hmac-validation.md   # HMAC implementations (all 3 types, all languages)
+│           ├── subscriptions.md     # Subscription plans, management, webhooks
+│           └── saved-cards.md       # Card tokens, CIT, MIT flows
+├── universal-prompt.md          # Cross-platform prompt (ChatGPT, Gemini, etc.)
 ├── LICENSE
 └── README.md
 ```
 
 ## Payment Methods Covered
 
-| Method | Flow |
-|--------|------|
-| **Card payments** | Iframe / Unified Checkout |
-| **Mobile wallets** | Vodafone Cash, Orange Money, Etisalat Cash |
-| **Kiosk** | Aman, Masary (bill reference) |
-| **Cash collection** | Agent-based collection |
-
-## API Versions
-
-| API | When to Use |
-|-----|-------------|
-| **Intention API** | New projects — single API call, simpler flow |
-| **Legacy Accept API** | Existing codebases — 3-step auth → order → payment key |
+| Method | Regions | Notes |
+|--------|---------|-------|
+| **Cards** (Visa, MC, Amex, MADA, OmanNet) | EGY, KSA, UAE, OMN | 3DS, Moto, Card-on-File, Auth/Cap |
+| **Mobile Wallets** (Vodafone Cash, Orange Cash, StcPay, etc.) | EGY, KSA | — |
+| **BNPLs** (Valu, Tabby, Tamara, Souhoola, Sympl, etc.) | EGY, KSA, UAE | 15+ providers |
+| **Apple Pay** | EGY, KSA, UAE, OMN | Requires certificates |
+| **Google Pay** | KSA, UAE, OMN | Not yet in Egypt |
+| **Bank Installments** | EGY | Live IDs only |
+| **Kiosk** (Aman, Masary) | EGY | No refund support |
 
 ## Supported Regions
 
-Egypt (EGP), Pakistan (PKR), UAE, Saudi Arabia, Oman, Jordan, and other Paymob-supported markets.
+| Region | Base URL |
+|--------|----------|
+| Egypt (EGY) | `https://accept.paymob.com` |
+| Oman (OMN) | `https://oman.paymob.com` |
+| Saudi Arabia (KSA) | `https://ksa.paymob.com` |
+| UAE | `https://uae.paymob.com` |
 
 ## Contributing
 
@@ -94,8 +101,8 @@ Contributions are welcome! If Paymob releases new APIs or you have improvements 
 
 ## Cross-Platform Version
 
-This repo also includes a universal system prompt (`universal-prompt.md`) that works with ChatGPT, Cursor, Windsurf, Gemini, or any other LLM. See the file for setup instructions per platform.
+This repo includes a universal system prompt (`universal-prompt.md`) that works with ChatGPT, Gemini, Cursor, Windsurf, and any other AI assistant. Paste it into your AI's system prompt or custom instructions.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.
