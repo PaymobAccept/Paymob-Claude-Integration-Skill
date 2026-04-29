@@ -1,47 +1,38 @@
-# Paymob Integration — Node.js / TypeScript
+﻿# Paymob Integration -- Node.js / TypeScript
 
-## Quick Start with Express
+## Environment Variables (.env)
 
-### Installation
+```env
+PAYMOB_SECRET_KEY=sk_live_xxxxxxx
+PAYMOB_PUBLIC_KEY=pk_live_xxxxxxx
+PAYMOB_HMAC_SECRET=your_hmac_secret
+PAYMOB_INTEGRATION_ID_CARD=123456
+PAYMOB_BASE_URL=https://accept.paymob.com
+APP_URL=https://yoursite.com
+```
+
+## Installation
 
 ```bash
 npm install express axios crypto dotenv
 ```
 
-### Environment Variables (.env)
-
-```env
-PAYMOB_API_KEY=your_api_key
-PAYMOB_SECRET_KEY=sk_live_xxxxxxx
-PAYMOB_PUBLIC_KEY=pk_live_xxxxxxx
-PAYMOB_HMAC_SECRET=your_hmac_secret
-PAYMOB_INTEGRATION_ID_CARD=123456
-PAYMOB_INTEGRATION_ID_WALLET=789012
-PAYMOB_INTEGRATION_ID_KIOSK=345678
-PAYMOB_IFRAME_ID=12345
-PAYMOB_BASE_URL=https://accept.paymob.com
-```
-
-### Intention API (Recommended)
+## Intention API Service (TypeScript)
 
 ```typescript
 import axios from 'axios';
 
-const PAYMOB_BASE = process.env.PAYMOB_BASE_URL;
+const BASE = process.env.PAYMOB_BASE_URL!;
+const SECRET = process.env.PAYMOB_SECRET_KEY!;
 
-interface PaymentIntentionRequest {
-  amount: number;        // in cents
-  currency: string;
-  paymentMethods: number[];
-  customer: { firstName: string; lastName: string; email: string };
+export async function createIntention(data: {
+  amount: number; currency: string; paymentMethods: number[];
+  customer: { firstName: string; lastName: string; email: string; phone?: string };
   items: { name: string; amount: number; quantity: number }[];
-  notificationUrl: string;
-  redirectionUrl: string;
-}
-
-export async function createIntention(data: PaymentIntentionRequest) {
+  notificationUrl: string; redirectionUrl: string;
+}) {
   const response = await axios.post(
-    `${PAYMOB_BASE}/v1/intention/`,
+    ${BASE}/v1/intention/,
     {
       amount: data.amount,
       currency: data.currency,
@@ -51,7 +42,7 @@ export async function createIntention(data: PaymentIntentionRequest) {
         first_name: data.customer.firstName,
         last_name: data.customer.lastName,
         email: data.customer.email,
-        phone_number: '+20000000000',
+        phone_number: data.customer.phone || '+20000000000',
         apartment: 'NA', floor: 'NA', street: 'NA',
         building: 'NA', shipping_method: 'NA',
         postal_code: 'NA', city: 'NA', country: 'EG', state: 'NA',
@@ -64,79 +55,22 @@ export async function createIntention(data: PaymentIntentionRequest) {
       notification_url: data.notificationUrl,
       redirection_url: data.redirectionUrl,
     },
-    {
-      headers: {
-        Authorization: `Token ${process.env.PAYMOB_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      },
-    }
+    { headers: { Authorization: Token , 'Content-Type': 'application/json' } }
   );
+  return { id: response.data.id, clientSecret: response.data.client_secret };
+}
 
-  return {
-    intentionId: response.data.id,
-    clientSecret: response.data.client_secret,
-  };
+export async function updateIntention(clientSecret: string, updates: Record<string, unknown>) {
+  const response = await axios.put(
+    ${BASE}/v1/intention/,
+    updates,
+    { headers: { Authorization: Token  } }
+  );
+  return response.data;
 }
 ```
 
-### Legacy 3-Step Flow
-
-```typescript
-import axios from 'axios';
-
-const PAYMOB_BASE = process.env.PAYMOB_BASE_URL;
-
-// Step 1: Authenticate
-async function authenticate(): Promise<string> {
-  const { data } = await axios.post(`${PAYMOB_BASE}/api/auth/tokens`, {
-    api_key: process.env.PAYMOB_API_KEY,
-  });
-  return data.token;
-}
-
-// Step 2: Create Order
-async function createOrder(authToken: string, amountCents: number, merchantOrderId: string) {
-  const { data } = await axios.post(`${PAYMOB_BASE}/api/ecommerce/orders`, {
-    auth_token: authToken,
-    delivery_needed: 'false',
-    amount_cents: amountCents.toString(),
-    currency: 'EGP',
-    merchant_order_id: merchantOrderId,
-    items: [],
-  });
-  return data.id;
-}
-
-// Step 3: Get Payment Key
-async function getPaymentKey(
-  authToken: string,
-  orderId: number,
-  amountCents: number,
-  integrationId: number,
-  billingData: Record<string, string>
-) {
-  const { data } = await axios.post(`${PAYMOB_BASE}/api/acceptance/payment_keys`, {
-    auth_token: authToken,
-    amount_cents: amountCents.toString(),
-    expiration: 3600,
-    order_id: orderId,
-    billing_data: {
-      first_name: billingData.firstName || 'NA',
-      last_name: billingData.lastName || 'NA',
-      email: billingData.email || 'NA',
-      phone_number: billingData.phone || 'NA',
-      apartment: 'NA', floor: 'NA', street: 'NA',
-      building: 'NA', shipping_method: 'NA',
-      postal_code: 'NA', city: 'NA', country: 'EG', state: 'NA',
-    },
-    currency: 'EGP',
-    integration_id: integrationId,
-  });
-  return data.token;
-}
-```
-
-### Express Routes
+## Express Checkout Route
 
 ```typescript
 import express from 'express';
@@ -144,123 +78,74 @@ import crypto from 'crypto';
 
 const router = express.Router();
 
-// Create checkout session
 router.post('/api/checkout', async (req, res) => {
-  try {
-    const { amount, items, customer } = req.body;
-    const amountCents = Math.round(amount * 100);
-
-    // Using Intention API
-    const intention = await createIntention({
-      amount: amountCents,
-      currency: 'EGP',
-      paymentMethods: [Number(process.env.PAYMOB_INTEGRATION_ID_CARD)],
-      customer,
-      items: items.map((i: any) => ({
-        name: i.name,
-        amount: Math.round(i.price * 100),
-        quantity: i.quantity,
-      })),
-      notificationUrl: `${process.env.APP_URL}/api/paymob/webhook`,
-      redirectionUrl: `${process.env.APP_URL}/payment/complete`,
-    });
-
-    res.json({
-      clientSecret: intention.clientSecret,
-      iframeUrl: `https://accept.paymob.com/unifiedcheckout/?publicKey=${process.env.PAYMOB_PUBLIC_KEY}&clientSecret=${intention.clientSecret}`,
-    });
-  } catch (error) {
-    console.error('Checkout error:', error);
-    res.status(500).json({ error: 'Payment initialization failed' });
-  }
+  const { amount, items, customer } = req.body;
+  const intention = await createIntention({
+    amount: Math.round(amount * 100),
+    currency: 'EGP',
+    paymentMethods: [Number(process.env.PAYMOB_INTEGRATION_ID_CARD)],
+    customer,
+    items: items.map((i: any) => ({ name: i.name, amount: Math.round(i.price * 100), quantity: i.quantity })),
+    notificationUrl: ${process.env.APP_URL}/api/paymob/webhook,
+    redirectionUrl: ${process.env.APP_URL}/payment/complete,
+  });
+  res.json({
+    clientSecret: intention.clientSecret,
+    checkoutUrl: ${process.env.PAYMOB_BASE_URL}/unifiedcheckout/?publicKey=&clientSecret=,
+  });
 });
 
-// Webhook handler
 router.post('/api/paymob/webhook', express.json(), (req, res) => {
-  const transaction = req.body.obj;
+  const obj = req.body.obj;
   const receivedHMAC = req.query.hmac as string;
-
-  if (!validateHMAC(transaction, receivedHMAC)) {
-    console.error('HMAC validation failed');
+  if (!validateTransactionHMAC(obj, receivedHMAC)) {
     return res.status(401).json({ error: 'Invalid HMAC' });
   }
-
-  if (transaction.success === true) {
-    // Payment successful — update your order in DB
-    console.log(`Payment ${transaction.id} succeeded for order ${transaction.order.id}`);
-    // await updateOrderStatus(transaction.order.merchant_order_id, 'paid');
-  } else {
-    // Payment failed
-    console.log(`Payment ${transaction.id} failed: ${transaction.data?.message}`);
+  if (obj.success === true) {
+    console.log('Payment', obj.id, 'succeeded for order', obj.order.id);
   }
-
   res.status(200).json({ received: true });
 });
 
-function validateHMAC(transaction: any, receivedHMAC: string): boolean {
+function validateTransactionHMAC(obj: any, received: string): boolean {
   const fields = [
-    transaction.amount_cents, transaction.created_at, transaction.currency,
-    transaction.error_occured, transaction.has_parent_transaction,
-    transaction.id, transaction.integration_id, transaction.is_3d_secure,
-    transaction.is_auth, transaction.is_capture, transaction.is_refunded,
-    transaction.is_standalone_payment, transaction.is_voided,
-    transaction.order.id, transaction.owner, transaction.pending,
-    transaction.source_data.pan, transaction.source_data.sub_type,
-    transaction.source_data.type, transaction.success,
+    obj.amount_cents, obj.created_at, obj.currency,
+    obj.error_occured, obj.has_parent_transaction,
+    obj.id, obj.integration_id, obj.is_3d_secure,
+    obj.is_auth, obj.is_capture, obj.is_refunded,
+    obj.is_standalone_payment, obj.is_voided,
+    obj.order.id, obj.owner, obj.pending,
+    obj.source_data.pan, obj.source_data.sub_type,
+    obj.source_data.type, obj.success,
   ];
-
-  const concatenated = fields.map(String).join('');
-  const calculated = crypto
-    .createHmac('sha512', process.env.PAYMOB_HMAC_SECRET!)
-    .update(concatenated)
-    .digest('hex');
-
-  return calculated === receivedHMAC;
+  const computed = crypto.createHmac('sha512', process.env.PAYMOB_HMAC_SECRET!).update(fields.map(String).join('')).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(received));
 }
 
 export default router;
 ```
 
-### NestJS Service Pattern
+## Post-Payment Operations
 
 ```typescript
-import { Injectable, HttpException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
+const headers = { Authorization: Token  };
 
-@Injectable()
-export class PaymobService {
-  private readonly baseUrl: string;
-  private readonly secretKey: string;
-
-  constructor(
-    private readonly http: HttpService,
-    private readonly config: ConfigService,
-  ) {
-    this.baseUrl = this.config.get('PAYMOB_BASE_URL');
-    this.secretKey = this.config.get('PAYMOB_SECRET_KEY');
-  }
-
-  async createPaymentIntention(amount: number, currency: string, integrationIds: number[]) {
-    const { data } = await firstValueFrom(
-      this.http.post(`${this.baseUrl}/v1/intention/`, {
-        amount,
-        currency,
-        payment_methods: integrationIds,
-        // ... billing_data, items, etc.
-      }, {
-        headers: { Authorization: `Token ${this.secretKey}` },
-      })
-    );
-    return data;
-  }
+async function refundTransaction(transactionId: number, amountCents: number) {
+  return (await axios.post(${BASE}/api/acceptance/void_refund/refund, { transaction_id: transactionId, amount_cents: amountCents }, { headers })).data;
+}
+async function voidTransaction(transactionId: number) {
+  return (await axios.post(${BASE}/api/acceptance/void_refund/void, { transaction_id: transactionId }, { headers })).data;
+}
+async function captureTransaction(transactionId: number, amountCents: number) {
+  return (await axios.post(${BASE}/api/acceptance/capture, { transaction_id: transactionId, amount_cents: amountCents }, { headers })).data;
+}
+async function getTransaction(transactionId: number) {
+  return (await axios.get(${BASE}/api/acceptance/transactions/, { headers })).data;
 }
 ```
 
-## Useful npm Packages
+## Useful Packages
 
-- `paymob-node` — Community SDK (check npm for latest)
-- `axios` — HTTP client
-- `crypto` — Built-in Node.js module for HMAC
-- `express` / `fastify` / `@nestjs/common` — Web framework
+- xios -- HTTP client
+- crypto -- Built-in Node.js HMAC module
+- express / astify / @nestjs/common -- Web framework

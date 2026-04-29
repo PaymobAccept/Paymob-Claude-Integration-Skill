@@ -1,170 +1,159 @@
-# Paymob Integration — Ruby / Rails
+﻿# Paymob Integration -- Ruby / Ruby on Rails
 
-## Configuration
+## Environment Variables
 
-```ruby
-# config/initializers/paymob.rb
-module Paymob
-  mattr_accessor :api_key, :secret_key, :hmac_secret, :base_url,
-                 :integration_id_card, :integration_id_wallet, :iframe_id
-
-  self.api_key = ENV['PAYMOB_API_KEY']
-  self.secret_key = ENV['PAYMOB_SECRET_KEY']
-  self.hmac_secret = ENV['PAYMOB_HMAC_SECRET']
-  self.base_url = ENV.fetch('PAYMOB_BASE_URL', 'https://accept.paymob.com')
-  self.integration_id_card = ENV['PAYMOB_INTEGRATION_ID_CARD']&.to_i
-  self.integration_id_wallet = ENV['PAYMOB_INTEGRATION_ID_WALLET']&.to_i
-  self.iframe_id = ENV['PAYMOB_IFRAME_ID']
-end
+```env
+PAYMOB_SECRET_KEY=sk_live_xxxxxxx
+PAYMOB_PUBLIC_KEY=pk_live_xxxxxxx
+PAYMOB_HMAC_SECRET=your_hmac_secret
+PAYMOB_INTEGRATION_ID_CARD=123456
+PAYMOB_BASE_URL=https://accept.paymob.com
 ```
 
-## Service Class
+## Installation
+
+```bash
+gem install faraday
+# or in Gemfile:
+gem 'faraday'
+```
+
+## PaymobClient Class
 
 ```ruby
-# app/services/paymob_service.rb
-require 'net/http'
+require 'faraday'
 require 'json'
 require 'openssl'
 
-class PaymobService
-  # Intention API (recommended)
-  def create_intention(amount_cents:, currency: 'EGP', payment_methods:,
-                       billing_data:, items:, notification_url:, redirection_url:)
-    post('/v1/intention/', {
-      amount: amount_cents,
-      currency: currency,
-      payment_methods: payment_methods,
-      items: items,
-      billing_data: billing_data,
-      notification_url: notification_url,
-      redirection_url: redirection_url,
-    }, auth_header: { 'Authorization' => "Token #{Paymob.secret_key}" })
+class PaymobClient
+  def initialize
+    @secret_key  = ENV.fetch('PAYMOB_SECRET_KEY')
+    @public_key  = ENV.fetch('PAYMOB_PUBLIC_KEY')
+    @hmac_secret = ENV.fetch('PAYMOB_HMAC_SECRET')
+    @base_url    = ENV.fetch('PAYMOB_BASE_URL', 'https://accept.paymob.com')
+    @conn = Faraday.new(url: @base_url) do |f|
+      f.request :json
+      f.response :json
+      f.headers['Authorization'] = "Token #{@secret_key}"
+    end
   end
 
-  # Legacy: Step 1
-  def authenticate
-    response = post('/api/auth/tokens', { api_key: Paymob.api_key })
-    response['token']
+  def create_intention(payload)
+    response = @conn.post('/v1/intention/', payload)
+    raise "Paymob error: #{response.body}" unless response.success?
+    { id: response.body['id'], client_secret: response.body['client_secret'] }
   end
 
-  # Legacy: Step 2
-  def create_order(auth_token:, amount_cents:, merchant_order_id:, currency: 'EGP')
-    response = post('/api/ecommerce/orders', {
-      auth_token: auth_token,
-      delivery_needed: 'false',
-      amount_cents: amount_cents.to_s,
-      currency: currency,
-      merchant_order_id: merchant_order_id,
-      items: [],
-    })
-    response['id']
+  def checkout_url(client_secret)
+    "#{@base_url}/unifiedcheckout/?publicKey=#{@public_key}&clientSecret=#{client_secret}"
   end
 
-  # Legacy: Step 3
-  def get_payment_key(auth_token:, order_id:, amount_cents:, integration_id:,
-                      billing_data: {}, currency: 'EGP')
-    defaults = {
-      first_name: 'NA', last_name: 'NA', email: 'NA', phone_number: 'NA',
-      apartment: 'NA', floor: 'NA', street: 'NA', building: 'NA',
-      shipping_method: 'NA', postal_code: 'NA', city: 'NA', country: 'EG', state: 'NA',
-    }
-
-    response = post('/api/acceptance/payment_keys', {
-      auth_token: auth_token,
-      amount_cents: amount_cents.to_s,
-      expiration: 3600,
-      order_id: order_id,
-      billing_data: defaults.merge(billing_data),
-      currency: currency,
-      integration_id: integration_id,
-    })
-    response['token']
+  def refund(transaction_id, amount_cents)
+    r = @conn.post('/api/acceptance/void_refund/refund',
+                   { transaction_id: transaction_id, amount_cents: amount_cents })
+    r.body
   end
 
-  # HMAC Validation
-  def valid_hmac?(transaction, received_hmac)
+  def void(transaction_id)
+    r = @conn.post('/api/acceptance/void_refund/void',
+                   { transaction_id: transaction_id })
+    r.body
+  end
+
+  def validate_transaction_hmac(obj, received)
     fields = [
-      transaction['amount_cents'], transaction['created_at'], transaction['currency'],
-      transaction['error_occured'], transaction['has_parent_transaction'],
-      transaction['id'], transaction['integration_id'], transaction['is_3d_secure'],
-      transaction['is_auth'], transaction['is_capture'], transaction['is_refunded'],
-      transaction['is_standalone_payment'], transaction['is_voided'],
-      transaction.dig('order', 'id'), transaction['owner'], transaction['pending'],
-      transaction.dig('source_data', 'pan'), transaction.dig('source_data', 'sub_type'),
-      transaction.dig('source_data', 'type'), transaction['success'],
+      obj['amount_cents'], obj['created_at'], obj['currency'],
+      obj['error_occured'], obj['has_parent_transaction'],
+      obj['id'], obj['integration_id'], obj['is_3d_secure'],
+      obj['is_auth'], obj['is_capture'], obj['is_refunded'],
+      obj['is_standalone_payment'], obj['is_voided'],
+      obj.dig('order', 'id'), obj['owner'], obj['pending'],
+      obj.dig('source_data', 'pan'), obj.dig('source_data', 'sub_type'),
+      obj.dig('source_data', 'type'), obj['success']
     ]
-
-    concatenated = fields.map(&:to_s).join
-    calculated = OpenSSL::HMAC.hexdigest('SHA512', Paymob.hmac_secret, concatenated)
-
-    ActiveSupport::SecurityUtils.secure_compare(calculated, received_hmac)
-  end
-
-  private
-
-  def post(path, body, auth_header: {})
-    uri = URI("#{Paymob.base_url}#{path}")
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = true
-
-    request = Net::HTTP::Post.new(uri)
-    request['Content-Type'] = 'application/json'
-    auth_header.each { |k, v| request[k] = v }
-    request.body = body.to_json
-
-    response = http.request(request)
-    JSON.parse(response.body)
+    concat = fields.map(&:to_s).join
+    computed = OpenSSL::HMAC.hexdigest('sha512', @hmac_secret, concat)
+    ActiveSupport::SecurityUtils.secure_compare(computed, received) rescue computed == received
   end
 end
 ```
 
-## Controller
+## Rails Controller
 
 ```ruby
-# app/controllers/paymob_controller.rb
-class PaymobController < ApplicationController
+class PaymentsController < ApplicationController
   skip_before_action :verify_authenticity_token, only: [:webhook]
+  before_action :set_paymob
 
   def checkout
-    service = PaymobService.new
-    amount_cents = (params[:amount].to_f * 100).to_i
-
-    result = service.create_intention(
-      amount_cents: amount_cents,
+    amount_cents = (params[:amount].to_f * 100).round
+    na = 'NA'
+    intention = @paymob.create_intention(
+      amount: amount_cents,
       currency: 'EGP',
-      payment_methods: [Paymob.integration_id_card],
-      billing_data: default_billing.merge(params.permit(:first_name, :last_name, :email).to_h),
-      items: [{ name: 'Order', amount: amount_cents, quantity: 1 }],
+      payment_methods: [ENV['PAYMOB_INTEGRATION_ID_CARD'].to_i],
+      billing_data: {
+        first_name: params[:first_name] || na, last_name: params[:last_name] || na,
+        email: params[:email], phone_number: '+20000000000',
+        apartment: na, floor: na, street: na, building: na,
+        shipping_method: na, postal_code: na, city: na, country: 'EG', state: na
+      },
+      customer: { first_name: na, last_name: na, email: params[:email] },
+      items: [],
       notification_url: paymob_webhook_url,
-      redirection_url: payment_complete_url,
+      redirection_url: payment_complete_url
     )
-
-    render json: { client_secret: result['client_secret'] }
+    render json: {
+      client_secret: intention[:client_secret],
+      checkout_url: @paymob.checkout_url(intention[:client_secret])
+    }
   end
 
   def webhook
-    transaction = params[:obj] || params
-    received_hmac = params[:hmac].to_s
-
-    service = PaymobService.new
-    unless service.valid_hmac?(transaction.to_unsafe_h, received_hmac)
+    body = JSON.parse(request.body.read)
+    obj  = body['obj'] || {}
+    hmac = params[:hmac]
+    unless @paymob.validate_transaction_hmac(obj, hmac)
       return render json: { error: 'Invalid HMAC' }, status: :unauthorized
     end
-
-    if transaction[:success] == true
-      # Order.find_by(merchant_id: transaction.dig(:order, :merchant_order_id))
-      #   &.update!(status: :paid, transaction_id: transaction[:id])
+    if obj['success']
+      Rails.logger.info "Payment #{obj['id']} succeeded"
     end
-
     render json: { received: true }
   end
 
   private
 
-  def default_billing
-    { first_name: 'NA', last_name: 'NA', email: 'NA', phone_number: 'NA',
-      apartment: 'NA', floor: 'NA', street: 'NA', building: 'NA',
-      shipping_method: 'NA', postal_code: 'NA', city: 'NA', country: 'EG', state: 'NA' }
+  def set_paymob
+    @paymob = PaymobClient.new
   end
+end
+```
+
+## Sinatra App
+
+```ruby
+require 'sinatra'
+require 'json'
+
+paymob = PaymobClient.new
+
+post '/api/checkout' do
+  content_type :json
+  data = JSON.parse(request.body.read)
+  amount_cents = (data['amount'].to_f * 100).round
+  na = 'NA'
+  intention = paymob.create_intention(
+    amount: amount_cents, currency: 'EGP',
+    payment_methods: [ENV['PAYMOB_INTEGRATION_ID_CARD'].to_i],
+    billing_data: { first_name: na, last_name: na, email: data['email'],
+                    phone_number: '+20000000000', apartment: na, floor: na,
+                    street: na, building: na, shipping_method: na,
+                    postal_code: na, city: na, country: 'EG', state: na },
+    customer: { first_name: na, last_name: na, email: data['email'] },
+    items: [], notification_url: 'https://yoursite.com/webhook',
+    redirection_url: 'https://yoursite.com/complete'
+  )
+  { checkout_url: paymob.checkout_url(intention[:client_secret]) }.to_json
 end
 ```

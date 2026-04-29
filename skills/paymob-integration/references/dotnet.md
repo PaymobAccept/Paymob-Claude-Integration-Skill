@@ -1,227 +1,153 @@
-# Paymob Integration — .NET / C#
+﻿# Paymob Integration -- .NET / C#
 
-## Quick Start
+## Environment Variables
 
-### NuGet Package (Community SDK)
+```env
+PAYMOB_SECRET_KEY=sk_live_xxxxxxx
+PAYMOB_PUBLIC_KEY=pk_live_xxxxxxx
+PAYMOB_HMAC_SECRET=your_hmac_secret
+PAYMOB_INTEGRATION_ID_CARD=123456
+PAYMOB_BASE_URL=https://accept.paymob.com
+```
+
+## Installation
 
 ```bash
-dotnet add package Xdot.Paymob.CashIn.DependencyInjection
+dotnet add package System.Net.Http.Json
 ```
 
-### Configuration
+## PaymobClient Class
 
 ```csharp
-// Startup.cs / Program.cs
-services.AddPaymobCashIn(config =>
-{
-    config.ApiKey = Configuration["Paymob:ApiKey"];
-    config.Hmac = Configuration["Paymob:HmacSecret"];
-});
-```
-
-```json
-// appsettings.json
-{
-  "Paymob": {
-    "ApiKey": "your_api_key",
-    "SecretKey": "sk_live_xxxxxxx",
-    "HmacSecret": "your_hmac_secret",
-    "IntegrationIdCard": 123456,
-    "IntegrationIdWallet": 789012,
-    "IframeId": "12345",
-    "BaseUrl": "https://accept.paymob.com"
-  }
-}
-```
-
-## Using the Xdot.Paymob SDK
-
-The SDK provides `IPaymobCashInBroker` with these methods:
-
-```csharp
-// Create an order
-var orderRequest = CashInCreateOrderRequest.CreateOrder(amountCents: 10000);
-var orderResponse = await _broker.CreateOrderAsync(orderRequest);
-
-// Generate payment key
-var billingData = new CashInBillingData(
-    firstName: "John",
-    lastName: "Doe",
-    phoneNumber: "+201234567890",
-    email: "john@example.com"
-);
-
-var paymentKeyRequest = new CashInPaymentKeyRequest(
-    integrationId: 123456,
-    orderId: orderResponse.Id,
-    billingData: billingData,
-    amountCents: 10000
-);
-
-var paymentKeyResponse = await _broker.RequestPaymentKeyAsync(paymentKeyRequest);
-
-// Generate iframe URL
-string iframeSrc = _broker.CreateIframeSrc(iframeId: "12345", token: paymentKeyResponse.PaymentKey);
-
-// Mobile wallet payment
-var walletRequest = new CashInWalletPayRequest(paymentKeyResponse.PaymentKey, "01234567890");
-var walletResponse = await _broker.CreateWalletPayAsync(walletRequest);
-
-// Kiosk payment
-var kioskRequest = new CashInKioskPayRequest(paymentKeyResponse.PaymentKey);
-var kioskResponse = await _broker.CreateKioskPayAsync(kioskRequest);
-// kioskResponse.BillReference — customer uses this at kiosk
-
-// HMAC validation
-bool isValid = _broker.Validate(transaction, hmacFromQueryString);
-```
-
-## Manual Integration (Without SDK)
-
-```csharp
-using System.Net.Http;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Net.Http.Headers;
 
-public class PaymobService
-{
+public class PaymobClient {
+    private readonly string _secretKey;
+    private readonly string _publicKey;
+    private readonly string _hmacSecret;
+    private readonly string _baseUrl;
     private readonly HttpClient _http;
-    private readonly PaymobConfig _config;
 
-    public PaymobService(HttpClient http, IOptions<PaymobConfig> config)
-    {
+    public PaymobClient(IConfiguration config, HttpClient http) {
+        _secretKey  = config["PAYMOB_SECRET_KEY"]!;
+        _publicKey  = config["PAYMOB_PUBLIC_KEY"]!;
+        _hmacSecret = config["PAYMOB_HMAC_SECRET"]!;
+        _baseUrl    = config["PAYMOB_BASE_URL"] ?? "https://accept.paymob.com";
         _http = http;
-        _config = config.Value;
+        _http.BaseAddress = new Uri(_baseUrl);
+        _http.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Token", _secretKey);
     }
 
-    // Intention API
-    public async Task<IntentionResponse> CreateIntentionAsync(
-        int amountCents, string currency, int[] integrationIds,
-        BillingData billing, Item[] items,
-        string notificationUrl, string redirectionUrl)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post,
-            $"{_config.BaseUrl}/v1/intention/");
-
-        request.Headers.Add("Authorization", $"Token {_config.SecretKey}");
-        request.Content = JsonContent.Create(new
-        {
-            amount = amountCents,
-            currency,
-            payment_methods = integrationIds,
-            items,
-            billing_data = billing,
-            notification_url = notificationUrl,
-            redirection_url = redirectionUrl,
-        });
-
-        var response = await _http.SendAsync(request);
+    public async Task<(string Id, string ClientSecret)> CreateIntentionAsync(object payload) {
+        var response = await _http.PostAsJsonAsync("/v1/intention/", payload);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<IntentionResponse>();
+        var body = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>();
+        return (body!["id"].ToString()!, body["client_secret"].ToString()!);
     }
 
-    // HMAC Validation
-    public bool ValidateHMAC(TransactionCallback transaction, string receivedHMAC)
-    {
-        var fields = new[]
-        {
-            transaction.AmountCents.ToString(),
-            transaction.CreatedAt,
-            transaction.Currency,
-            transaction.ErrorOccured.ToString().ToLower(),
-            transaction.HasParentTransaction.ToString().ToLower(),
-            transaction.Id.ToString(),
-            transaction.IntegrationId.ToString(),
-            transaction.Is3dSecure.ToString().ToLower(),
-            transaction.IsAuth.ToString().ToLower(),
-            transaction.IsCapture.ToString().ToLower(),
-            transaction.IsRefunded.ToString().ToLower(),
-            transaction.IsStandalonePayment.ToString().ToLower(),
-            transaction.IsVoided.ToString().ToLower(),
-            transaction.Order.Id.ToString(),
-            transaction.Owner.ToString(),
-            transaction.Pending.ToString().ToLower(),
-            transaction.SourceData.Pan,
-            transaction.SourceData.SubType,
-            transaction.SourceData.Type,
-            transaction.Success.ToString().ToLower(),
+    public string CheckoutUrl(string clientSecret) =>
+        $"{_baseUrl}/unifiedcheckout/?publicKey={_publicKey}&clientSecret={clientSecret}";
+
+    public async Task<JsonElement> RefundAsync(long transactionId, int amountCents) {
+        var response = await _http.PostAsJsonAsync("/api/acceptance/void_refund/refund",
+            new { transaction_id = transactionId, amount_cents = amountCents });
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    public async Task<JsonElement> VoidAsync(long transactionId) {
+        var response = await _http.PostAsJsonAsync("/api/acceptance/void_refund/void",
+            new { transaction_id = transactionId });
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    public bool ValidateTransactionHmac(Dictionary<string, object> obj, string received) {
+        var fields = new[] {
+            obj["amount_cents"], obj["created_at"], obj["currency"],
+            obj["error_occured"], obj["has_parent_transaction"],
+            obj["id"], obj["integration_id"], obj["is_3d_secure"],
+            obj["is_auth"], obj["is_capture"], obj["is_refunded"],
+            obj["is_standalone_payment"], obj["is_voided"],
+            ((Dictionary<string,object>)obj["order"])["id"],
+            obj["owner"], obj["pending"],
+            ((Dictionary<string,object>)obj["source_data"])["pan"],
+            ((Dictionary<string,object>)obj["source_data"])["sub_type"],
+            ((Dictionary<string,object>)obj["source_data"])["type"],
+            obj["success"],
         };
-
-        var concatenated = string.Join("", fields);
-        using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(_config.HmacSecret));
-        var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(concatenated));
-        var calculated = BitConverter.ToString(hash).Replace("-", "").ToLower();
-
-        return calculated == receivedHMAC;
+        var concat = string.Concat(fields.Select(f => f?.ToString() ?? ""));
+        using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(_hmacSecret));
+        var computed = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(concat))).ToLower();
+        return CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(computed), Encoding.UTF8.GetBytes(received));
     }
 }
 ```
 
-### Webhook Controller
+## ASP.NET Core Controller
 
 ```csharp
+using Microsoft.AspNetCore.Mvc;
+
 [ApiController]
-[Route("api/paymob")]
-public class PaymobController : ControllerBase
-{
-    private readonly PaymobService _paymob;
+[Route("api")]
+public class PaymobController : ControllerBase {
+    private readonly PaymobClient _paymob;
+    private readonly IConfiguration _config;
 
-    public PaymobController(PaymobService paymob) => _paymob = paymob;
+    public PaymobController(PaymobClient paymob, IConfiguration config) {
+        _paymob = paymob; _config = config;
+    }
 
-    [HttpPost("webhook")]
-    public IActionResult Webhook([FromQuery] string hmac, [FromBody] WebhookPayload payload)
-    {
-        var transaction = payload.Obj;
+    [HttpPost("checkout")]
+    public async Task<IActionResult> Checkout([FromBody] CheckoutRequest req) {
+        var amountCents = (int)Math.Round(req.Amount * 100);
+        const string NA = "NA";
+        var payload = new {
+            amount = amountCents, currency = "EGP",
+            payment_methods = new[] { int.Parse(_config["PAYMOB_INTEGRATION_ID_CARD"]!) },
+            billing_data = new {
+                first_name = req.FirstName ?? NA, last_name = req.LastName ?? NA,
+                email = req.Email, phone_number = "+20000000000",
+                apartment = NA, floor = NA, street = NA, building = NA,
+                shipping_method = NA, postal_code = NA, city = NA,
+                country = "EG", state = NA
+            },
+            customer = new { first_name = NA, last_name = NA, email = req.Email },
+            items = Array.Empty<object>(),
+            notification_url = Url.Action("Webhook", "Paymob", null, Request.Scheme),
+            redirection_url = $"{Request.Scheme}://{Request.Host}/payment/complete"
+        };
+        var (_, clientSecret) = await _paymob.CreateIntentionAsync(payload);
+        return Ok(new { client_secret = clientSecret, checkout_url = _paymob.CheckoutUrl(clientSecret) });
+    }
 
-        if (!_paymob.ValidateHMAC(transaction, hmac))
+    [HttpPost("paymob/webhook")]
+    public IActionResult Webhook([FromBody] WebhookPayload payload, [FromQuery] string hmac) {
+        var obj = payload.Obj;
+        if (!_paymob.ValidateTransactionHmac(obj, hmac))
             return Unauthorized(new { error = "Invalid HMAC" });
-
-        if (transaction.Success)
-        {
-            // Update order in database
-        }
-
+        if (obj.TryGetValue("success", out var success) && success?.ToString() == "True")
+            Console.WriteLine($"Payment succeeded");
         return Ok(new { received = true });
     }
 }
+
+public record CheckoutRequest(decimal Amount, string Email, string? FirstName, string? LastName);
+public record WebhookPayload(Dictionary<string, object> Obj);
 ```
 
-## Key Types
+## Program.cs (Dependency Injection)
 
 ```csharp
-public record PaymobConfig
-{
-    public string ApiKey { get; init; }
-    public string SecretKey { get; init; }
-    public string HmacSecret { get; init; }
-    public string BaseUrl { get; init; } = "https://accept.paymob.com";
-    public int IntegrationIdCard { get; init; }
-    public int IntegrationIdWallet { get; init; }
-    public string IframeId { get; init; }
-}
-
-public record IntentionResponse(int Id, string ClientSecret);
-
-public record TransactionCallback
-{
-    public int AmountCents { get; init; }
-    public string CreatedAt { get; init; }
-    public string Currency { get; init; }
-    public bool ErrorOccured { get; init; }
-    public bool HasParentTransaction { get; init; }
-    public int Id { get; init; }
-    public int IntegrationId { get; init; }
-    public bool Is3dSecure { get; init; }
-    public bool IsAuth { get; init; }
-    public bool IsCapture { get; init; }
-    public bool IsRefunded { get; init; }
-    public bool IsStandalonePayment { get; init; }
-    public bool IsVoided { get; init; }
-    public OrderRef Order { get; init; }
-    public int Owner { get; init; }
-    public bool Pending { get; init; }
-    public SourceDataRef SourceData { get; init; }
-    public bool Success { get; init; }
-}
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddHttpClient<PaymobClient>();
+builder.Services.AddControllers();
+var app = builder.Build();
+app.MapControllers();
+app.Run();
 ```

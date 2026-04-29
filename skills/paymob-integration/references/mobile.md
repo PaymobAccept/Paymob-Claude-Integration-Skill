@@ -1,239 +1,251 @@
-# Paymob Integration — Mobile (Flutter, React Native)
+﻿# Paymob Integration -- Mobile (React Native / Flutter)
+
+## Overview
+
+Mobile apps should call your backend to create the intention. Never expose the secret key in mobile apps.
+
+Flow:
+1. Mobile app sends cart data to your backend
+2. Backend creates intention, returns clientSecret + checkout URL
+3. Mobile opens WebView or browser with checkout URL
+
+## React Native
+
+### Installation
+
+```bash
+npm install axios react-native-webview
+# iOS
+cd ios && pod install
+```
+
+### Checkout Hook
+
+```tsx
+import { useState } from 'react';
+import axios from 'axios';
+
+export function usePaymobCheckout() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const initiateCheckout = async (amount: number, email: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data } = await axios.post('https://yourbackend.com/api/checkout', {
+        amount, email,
+      });
+      return data.checkout_url as string;
+    } catch (e: any) {
+      setError(e.message || 'Checkout failed');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { initiateCheckout, loading, error };
+}
+```
+
+### WebView Payment Screen
+
+```tsx
+import React, { useState } from 'react';
+import { View, Button, ActivityIndicator, Alert } from 'react-native';
+import WebView from 'react-native-webview';
+import { usePaymobCheckout } from './usePaymobCheckout';
+
+export default function CheckoutScreen({ amount, email, navigation }) {
+  const { initiateCheckout, loading } = usePaymobCheckout();
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+
+  const startCheckout = async () => {
+    const url = await initiateCheckout(amount, email);
+    if (url) setCheckoutUrl(url);
+  };
+
+  const handleNavChange = (navState: any) => {
+    // Detect redirect to your completion URL
+    if (navState.url.includes('/payment/complete')) {
+      const params = new URL(navState.url).searchParams;
+      if (params.get('success') === 'true') {
+        Alert.alert('Success', 'Payment completed!');
+      } else {
+        Alert.alert('Failed', 'Payment failed. Please try again.');
+      }
+      navigation.goBack();
+    }
+  };
+
+  if (checkoutUrl) {
+    return (
+      <WebView
+        source={{ uri: checkoutUrl }}
+        onNavigationStateChange={handleNavChange}
+        startInLoadingState
+        renderLoading={() => <ActivityIndicator />}
+      />
+    );
+  }
+
+  return (
+    <View>
+      {loading ? <ActivityIndicator /> : (
+        <Button title={Pay EGP } onPress={startCheckout} />
+      )}
+    </View>
+  );
+}
+```
+
+### Deep Link Handling (optional)
+
+```tsx
+// Register deep link in app.json / AndroidManifest
+// Then handle redirect:
+import { Linking } from 'react-native';
+
+Linking.addEventListener('url', ({ url }) => {
+  if (url.includes('payment/complete')) {
+    const params = new URL(url).searchParams;
+    const success = params.get('success') === 'true';
+    // navigate to result screen
+  }
+});
+```
 
 ## Flutter
 
-### Packages
+### pubspec.yaml
 
 ```yaml
-# pubspec.yaml
 dependencies:
-  http: ^1.1.0
-  webview_flutter: ^4.4.0
-  # Or use the community package:
-  # easy_paymob: ^latest
+  http: ^1.2.0
+  webview_flutter: ^4.7.0
+  url_launcher: ^6.2.0
 ```
 
-### Service
+### Paymob Service
 
 ```dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class PaymobService {
-  static const String baseUrl = 'https://accept.paymob.com';
-  final String secretKey;
+  final String backendUrl;
+  PaymobService({required this.backendUrl});
 
-  PaymobService({required this.secretKey});
-
-  /// Create payment intention (recommended)
-  Future<Map<String, dynamic>> createIntention({
+  Future<String> createCheckoutUrl({
     required int amountCents,
-    required String currency,
-    required List<int> paymentMethods,
-    required Map<String, String> billingData,
-    required List<Map<String, dynamic>> items,
-    required String notificationUrl,
-    required String redirectionUrl,
+    required String email,
   }) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/v1/intention/'),
-      headers: {
-        'Authorization': 'Token $secretKey',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'amount': amountCents,
-        'currency': currency,
-        'payment_methods': paymentMethods,
-        'items': items,
-        'billing_data': billingData,
-        'notification_url': notificationUrl,
-        'redirection_url': redirectionUrl,
-      }),
+      Uri.parse('/api/checkout'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'amount': amountCents, 'email': email}),
     );
-
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception('Failed to create intention: ${response.body}');
+    if (response.statusCode != 200) {
+      throw Exception('Checkout failed: ');
     }
-    return jsonDecode(response.body);
+    final data = jsonDecode(response.body);
+    return data['checkout_url'] as String;
   }
 }
 ```
 
-### WebView Checkout
+### Flutter WebView Screen
 
 ```dart
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class PaymobCheckoutScreen extends StatefulWidget {
-  final String clientSecret;
-  final String publicKey;
-
+  final String checkoutUrl;
+  final VoidCallback onSuccess;
+  final VoidCallback onFailure;
   const PaymobCheckoutScreen({
-    required this.clientSecret,
-    required this.publicKey,
+    required this.checkoutUrl, required this.onSuccess, required this.onFailure, super.key
   });
 
-  @override
-  State<PaymobCheckoutScreen> createState() => _PaymobCheckoutScreenState();
+  @override State<PaymobCheckoutScreen> createState() => _State();
 }
 
-class _PaymobCheckoutScreenState extends State<PaymobCheckoutScreen> {
+class _State extends State<PaymobCheckoutScreen> {
   late final WebViewController _controller;
 
   @override
   void initState() {
     super.initState();
-    final url = 'https://accept.paymob.com/unifiedcheckout/'
-        '?publicKey=${widget.publicKey}'
-        '&clientSecret=${widget.clientSecret}';
-
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
         onNavigationRequest: (request) {
-          // Detect redirect to your redirection_url
-          if (request.url.contains('payment/complete')) {
+          if (request.url.contains('/payment/complete')) {
             final uri = Uri.parse(request.url);
-            final success = uri.queryParameters['success'] == 'true';
-            Navigator.pop(context, success);
+            if (uri.queryParameters['success'] == 'true') {
+              widget.onSuccess();
+            } else {
+              widget.onFailure();
+            }
+            Navigator.pop(context);
             return NavigationDecision.prevent;
           }
           return NavigationDecision.navigate;
         },
       ))
-      ..loadRequest(Uri.parse(url));
+      ..loadRequest(Uri.parse(widget.checkoutUrl));
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Payment')),
-      body: WebViewWidget(controller: _controller),
-    );
-  }
-}
-```
-
-### Using easy_paymob Package
-
-```dart
-import 'package:easy_paymob/easy_paymob.dart';
-
-// Initialize
-final paymob = EasyPaymob(
-  apiKey: 'your_api_key',
-  iframeId: 12345,
-  integrationId: 123456,
-);
-
-// In your widget
-final result = await paymob.payWithCard(
-  context: context,
-  amountInCents: '10000',
-  currency: 'EGP',
-  billingData: BillingData(
-    firstName: 'John',
-    lastName: 'Doe',
-    email: 'john@example.com',
-    phone: '+201234567890',
-  ),
-);
-
-if (result.success) {
-  // Payment succeeded
-  print('Transaction ID: ${result.transactionId}');
-}
-```
-
-## React Native
-
-### WebView Approach
-
-```bash
-npm install react-native-webview
-```
-
-```tsx
-import React, { useState } from 'react';
-import { View, Button, ActivityIndicator } from 'react-native';
-import { WebView } from 'react-native-webview';
-
-interface Props {
-  clientSecret: string;
-  publicKey: string;
-  onComplete: (success: boolean) => void;
-}
-
-export function PaymobCheckout({ clientSecret, publicKey, onComplete }: Props) {
-  const [loading, setLoading] = useState(true);
-  const checkoutUrl = `https://accept.paymob.com/unifiedcheckout/?publicKey=${publicKey}&clientSecret=${clientSecret}`;
-
-  return (
-    <View style={{ flex: 1 }}>
-      {loading && <ActivityIndicator size="large" style={{ position: 'absolute', top: '50%', alignSelf: 'center' }} />}
-      <WebView
-        source={{ uri: checkoutUrl }}
-        onLoadEnd={() => setLoading(false)}
-        onNavigationStateChange={(navState) => {
-          // Detect redirect to your success/failure URL
-          if (navState.url.includes('payment/complete')) {
-            const url = new URL(navState.url);
-            const success = url.searchParams.get('success') === 'true';
-            onComplete(success);
-          }
-        }}
-        javaScriptEnabled
-        domStorageEnabled
-      />
-    </View>
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Payment')),
+    body: WebViewWidget(controller: _controller),
   );
 }
 ```
 
-### Usage in Screen
+### Flutter Checkout Flow
 
-```tsx
-export function CheckoutScreen() {
-  const [checkoutData, setCheckoutData] = useState<{ clientSecret: string } | null>(null);
+```dart
+final service = PaymobService(backendUrl: 'https://yourbackend.com');
 
-  async function startPayment() {
-    // Call your backend to create an intention
-    const res = await fetch('https://your-api.com/api/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: 150, currency: 'EGP' }),
-    });
-    const data = await res.json();
-    setCheckoutData(data);
-  }
-
-  if (checkoutData) {
-    return (
-      <PaymobCheckout
-        clientSecret={checkoutData.clientSecret}
-        publicKey="pk_live_xxxxx"
-        onComplete={(success) => {
-          setCheckoutData(null);
-          if (success) {
-            // Navigate to success screen
-          } else {
-            // Show error
-          }
-        }}
-      />
+Future<void> startPayment(BuildContext context) async {
+  try {
+    final url = await service.createCheckoutUrl(
+      amountCents: 5000, // EGP 50.00
+      email: 'user@example.com',
     );
+    if (!context.mounted) return;
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => PaymobCheckoutScreen(
+        checkoutUrl: url,
+        onSuccess: () => ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Payment successful!'))),
+        onFailure: () => ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Payment failed.'))),
+      ),
+    ));
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ')));
   }
-
-  return <Button title="Pay 150 EGP" onPress={startPayment} />;
 }
 ```
 
-## Important Notes for Mobile
+## Native Mobile SDKs
 
-1. **Backend creates the intention** — never put secret keys in mobile apps
-2. **Use WebView for checkout** — Paymob's unified checkout works well in embedded WebViews
-3. **Detect completion via URL redirect** — watch for navigation to your `redirection_url`
-4. **Wallet payments on mobile** — the redirect from wallet apps (Vodafone Cash, etc.) may need deep linking setup
-5. **Always validate payment server-side** — use webhooks as the source of truth, not client-side redirect params
+Paymob provides official native SDKs for direct (non-WebView) integration:
+
+- **iOS SDK**: Available on CocoaPods / Swift Package Manager
+- **Android SDK**: Available on Maven Central / Gradle
+
+Contact Paymob support or check your merchant dashboard for SDK download links and integration guides.
+
+## Notes
+
+- Never embed PAYMOB_SECRET_KEY in mobile apps
+- Use SSL pinning for backend API calls in production
+- Test with Paymob sandbox credentials before going live
+- Handle 
+otification_url webhooks server-side regardless of mobile redirect result
