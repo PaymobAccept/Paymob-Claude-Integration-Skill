@@ -1,7 +1,7 @@
 {
   "name": "paymob-integration",
   "description": "Expert, workflow-driven guidance for integrating the Paymob payment gateway across Egypt, UAE, KSA, and Oman. Routes by platform (Shopify apps / prebuilt e-commerce plugins vs custom build), onboarding, web/API (Intention API + Unified Checkout + Pixel SDK), and native Mobile SDKs. Covers all 3 HMAC types (transaction, card token, subscription), transaction inquiry/reconciliation, subscriptions, saved cards (CIT/MIT), Auth/Capture, refunds/void, split features, and convenience fees, and ships corrected ready-to-use code for Node.js, Python, PHP, .NET, Ruby, and frontend. Triggers even when no provider is named for a regional payment request.",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "author": {
     "name": "Paymob Support",
     "email": "mohamedragab@paymob.com"
