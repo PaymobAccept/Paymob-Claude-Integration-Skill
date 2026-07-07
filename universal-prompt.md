@@ -240,6 +240,14 @@ Sandbox test data expires after 30 days. Paymob does not publish "decline" test 
 | Checkout not rendering | Wrong `publicKey` (used Secret Key) or stale/reused single-use `client_secret` | Use the Public Key; create a fresh intention |
 | Subscription HMAC fails | HMAC is in the body, not the query string | Read `hmac` from the request body |
 
+## LIVE ACCOUNT ACCESS — PAYMOB MCP SERVER (optional)
+
+If your agent supports MCP, Paymob runs an official server at `https://mcp.paymob.com/mcp` (Streamable HTTP) that acts on the merchant's *real* account: create payment intentions and payment links, pull transactions/balances/transfers, export reports, request settlements, and open support tickets (~25 tools, including guided `elicit_*` helpers). Authenticate in-session with the merchant's own Paymob API key + secret key — **test mode first**, since it includes money-movement tools like `request_instant_settlement`. Add it to any MCP client:
+```json
+{ "mcpServers": { "paymob": { "type": "http", "url": "https://mcp.paymob.com/mcp" } } }
+```
+Use it for interactive testing and reconciliation. It complements — but does **not** replace — the HMAC-verified webhook as the source of truth for payment status.
+
 ## LIVE PAYMOB RESOURCES (authoritative, always current)
 
 When exact endpoints/field orders/SDK versions may have changed, these win over anything above:
@@ -247,3 +255,4 @@ When exact endpoints/field orders/SDK versions may have changed, these win over 
 - Developer docs — `https://developers.paymob.com/`
 - Integration Wizard (roadmap, runnable samples, HMAC/webhook tester) — `https://wizard.paymob.com/`
 - Community forum — `https://community.paymob.com/`
+- MCP server (live account actions) — `https://mcp.paymob.com/mcp`

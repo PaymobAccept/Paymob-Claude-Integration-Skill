@@ -45,6 +45,30 @@ When you ask the agent for help integrating Paymob, it provides:
 
 ---
 
+## Live access — Paymob MCP server
+
+Beyond *generating* code, agents can act on a merchant's **real Paymob account** through Paymob's official [MCP server](https://mcp.paymob.com/mcp) — creating payment intentions and links, pulling transactions/balances, exporting reports, requesting settlements, and opening support tickets (~25 tools). Great for interactive testing and reconciliation.
+
+This plugin **bundles** it: the repo ships a root [`.mcp.json`](.mcp.json), so enabling the plugin registers the `paymob` server automatically. To add it to any other MCP client:
+
+```json
+{
+  "mcpServers": {
+    "paymob": { "type": "http", "url": "https://mcp.paymob.com/mcp" }
+  }
+}
+```
+
+Or in Claude Code standalone:
+
+```bash
+claude mcp add --transport http paymob https://mcp.paymob.com/mcp
+```
+
+You authenticate **in-session** with your own Paymob API credentials (test mode first — it includes money-movement tools). It complements, but does **not** replace, the HMAC-verified webhook as the source of truth. Full setup, the tool catalog, and security notes: [`references/mcp-server.md`](skills/paymob-integration/references/mcp-server.md).
+
+---
+
 ## Installation
 
 ### Claude Code (CLI)
@@ -93,8 +117,9 @@ Once installed, the agent activates on any Paymob request — or even a generic 
 Paymob-Claude-Integration-Skill/
 ├── AGENTS.md                          # Cross-agent entrypoint (Codex, Aider, Zed, Gemini CLI, …)
 ├── universal-prompt.md                # Portable prompt (Cursor, Windsurf, Copilot, ChatGPT, Gemini, …)
+├── .mcp.json                          # Bundled Paymob MCP server (auto-registers when the plugin is enabled)
 ├── .claude-plugin/
-│   └── plugin.json                    # Claude Code plugin manifest (v3.1.0)
+│   └── plugin.json                    # Claude Code plugin manifest (v3.2.0)
 ├── skills/
 │   └── paymob-integration/
 │       ├── SKILL.md                   # Workflow backbone: platform routing → onboarding → web/mobile → testing
@@ -107,6 +132,7 @@ Paymob-Claude-Integration-Skill/
 │           ├── test-credentials.md    # Sandbox cards, wallets, OTPs
 │           ├── advanced-features.md   # Subscriptions, saved cards (CIT/MIT), Auth/Cap, refund/void, split, fees
 │           ├── live-resources.md      # llms.txt, dev docs, Integration Wizard, community — when/how to use
+│           ├── mcp-server.md          # Official Paymob MCP server: connect, authenticate, tool catalog, security
 │           ├── code-nodejs.md         # Node.js / TypeScript / Express / NestJS
 │           ├── code-python.md         # Python / Django / Flask / FastAPI
 │           ├── code-php.md            # PHP / Laravel

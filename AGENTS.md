@@ -6,6 +6,7 @@ This repository is a portable **skill** that makes any AI coding agent an expert
 - Start with `skills/paymob-integration/SKILL.md` (the step-by-step workflow).
 - Then read the reference file for the task at hand — e.g. `references/intention-api.md`, `references/hmac-verification.md`, `references/code-<stack>.md`, `references/mobile-sdks.md`, `references/advanced-features.md`.
 - When exact endpoints / field orders / SDK versions matter, verify against the live docs in `references/live-resources.md` — **the live docs win** over anything embedded here.
+- For **live account actions** on the merchant's real Paymob account (create intentions/links, pull transactions/balances, exports, settlements), Paymob's official MCP server is at `https://mcp.paymob.com/mcp` — setup and the ~25-tool catalog are in `references/mcp-server.md`. It complements this guidance; it never replaces the HMAC-verified webhook as the source of truth.
 
 ## Non-negotiable rules
 

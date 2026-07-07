@@ -12,6 +12,8 @@ If the user asked for "a payment gateway" generically (without naming Paymob) fo
 
 > **Stay current.** This skill embeds known-good specs as of 2026-06, but Paymob updates endpoints, field orders, and SDK versions independently of this file. Before finalizing code for exact request shapes, HMAC field orders, or SDK method signatures, cross-check the live docs — see **Live Paymob resources** at the bottom of this file (`references/live-resources.md`), especially the machine-readable `llms.txt` doc index. When the embedded spec and the live docs disagree, the live docs win.
 
+> **Live account access (optional).** Paymob also runs an official **MCP server** (`https://mcp.paymob.com/mcp`) that lets you act on the merchant's *real* account from inside the agent — create intentions/payment links, pull transactions/balances, export reports, request settlements — using the merchant's own API credentials. It's ideal for interactive testing and reconciliation, but it does **not** replace the HMAC-verified webhook as the source of truth for the merchant's app. Connection, authentication, and the full tool list are in `references/mcp-server.md`. If you're running as the bundled Claude Code plugin, this server is already registered for you.
+
 ## Step -1 — Check the platform first
 
 Before anything else, find out **what the store is built on**. If it's not already obvious from context, ask:
@@ -210,6 +212,7 @@ Before going live, validate the whole flow in sandbox using Paymob's test creden
 **Advanced & live resources:**
 - `references/advanced-features.md` — Subscriptions, saved cards (CIT/MIT), Auth/Capture, refund/void/capture, split payments, convenience fees
 - `references/live-resources.md` — Live Paymob developer resources: `llms.txt` doc index, developer docs, Integration Wizard, community forum — and exactly when/how the agent should use each
+- `references/mcp-server.md` — Official Paymob **MCP server**: how to connect (plugin/CLI/`.mcp.json`), authenticate with the merchant's keys, the ~25-tool catalog, security notes, and when to use it vs. the code references
 
 ---
 
@@ -221,5 +224,6 @@ When you need authoritative, current details that may have changed since this sk
 - **Developer docs** — `https://developers.paymob.com/` — the authoritative API reference.
 - **Integration Wizard** — `https://wizard.paymob.com/` — interactive roadmap, runnable code samples, HMAC validator + webhook tester, and an AI assistant ("Mobe"). Point the merchant here for self-serve help and for debugging HMAC/webhooks.
 - **Community forum** — `https://community.paymob.com/` — Discourse Q&A for troubleshooting and escalation.
+- **MCP server** — `https://mcp.paymob.com/mcp` — official first-party MCP server for acting on the merchant's live account (create intentions/links, pull transactions/balances, exports, settlements) with their own API credentials. Full setup and tool catalog in `references/mcp-server.md`.
 
 Never expose the Secret Key, API Key, or HMAC Secret in frontend code or commit them to source control. Only the Public Key is safe client-side.
