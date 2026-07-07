@@ -74,7 +74,7 @@ You authenticate **in-session** with your own Paymob API credentials (test mode 
 ### Claude Code (CLI)
 
 ```bash
-claude plugin install --git https://github.com/PaymobAccept/Paymob-Claude-Integration-Skill
+claude plugin install --git https://github.com/PaymobAccept/Paymob-AI-Integration-Skill
 ```
 
 ### Cowork (Desktop)
@@ -84,7 +84,7 @@ Install from the plugin marketplace, or point to this repo as a custom marketpla
 ### Other agents (Cursor, Windsurf, Copilot, Codex, …)
 
 ```bash
-git clone https://github.com/PaymobAccept/Paymob-Claude-Integration-Skill.git
+git clone https://github.com/PaymobAccept/Paymob-AI-Integration-Skill.git
 ```
 
 Then follow the [Works with any AI agent](#works-with-any-ai-agent) table — copy `AGENTS.md` or `universal-prompt.md` into your own project at the location your tool expects.
@@ -92,7 +92,7 @@ Then follow the [Works with any AI agent](#works-with-any-ai-agent) table — co
 ### Local development (Claude Code)
 
 ```bash
-claude --plugin-dir ./Paymob-Claude-Integration-Skill
+claude --plugin-dir ./Paymob-AI-Integration-Skill
 ```
 
 ---
@@ -114,7 +114,7 @@ Once installed, the agent activates on any Paymob request — or even a generic 
 ## Repository structure
 
 ```
-Paymob-Claude-Integration-Skill/
+Paymob-AI-Integration-Skill/
 ├── AGENTS.md                          # Cross-agent entrypoint (Codex, Aider, Zed, Gemini CLI, …)
 ├── universal-prompt.md                # Portable prompt (Cursor, Windsurf, Copilot, ChatGPT, Gemini, …)
 ├── .mcp.json                          # Bundled Paymob MCP server (auto-registers when the plugin is enabled)
